@@ -39,162 +39,142 @@ const createPlayer = (name, marker) => {
 
 // === MODULE 3: Game Controller (Single instance, IIFE) ===
 const gameController = (() => {
-  // 1. We create the two players internally using our factory from Step 2
-  const players = [
-    createPlayer("Player One", "X"),
-    createPlayer("Player Two", "O")
-  ];
-
-  let activePlayer = players[0]; // Player One ('X') starts the match
+  let players = [];
+  let activePlayer;
   let isGameOver = false;
 
-  // 2. The 8 possible winning combinations (indexes on our 9-slot board array)
   const winningCombinations = [
     [0, 1, 2], [3, 4, 5], [6, 7, 8], // Horizontal Rows
     [0, 3, 6], [1, 4, 7], [2, 5, 8], // Vertical Columns
     [0, 4, 8], [2, 4, 6]             // Diagonals
   ];
 
+  // Initializes or updates the player structures with current input values
+  const setupPlayers = () => {
+    const p1Name = document.getElementById("player1-name").value || "Player One";
+    const p2Name = document.getElementById("player2-name").value || "Player Two";
+    
+    players = [
+      createPlayer(p1Name, "X"),
+      createPlayer(p2Name, "O")
+    ];
+    activePlayer = players[0];
+  };
+
   const getActivePlayer = () => activePlayer;
+  const getIsGameOver = () => isGameOver;
 
   const switchPlayerTurn = () => {
     activePlayer = activePlayer === players[0] ? players[1] : players[0];
   };
 
-  // 3. Logic to analyze if the current player won
   const checkWin = (currentBoard, marker) => {
-    // .some looks if at least one combination is true
     return winningCombinations.some(combination => {
-      // .every ensures all 3 positions in that combination match the player's marker
       return combination.every(index => currentBoard[index] === marker);
     });
   };
 
-  // 4. Logic to check for a tie (if all squares are full and checkWin was false)
   const checkTie = (currentBoard) => {
     return currentBoard.every(square => square !== "");
   };
 
-  // 5. Main public method to execute a turn in the game
   const playRound = (index) => {
-    if (isGameOver) {
-      console.log("The game is already over! Call gameController.restartGame() to play again.");
-      return;
-    }
+    if (isGameOver) return;
 
-    console.log(`\n${activePlayer.getName()}'s turn (${activePlayer.getMarker()}) playing on square ${index}...`);
+    // If players array is empty, initialize them before the first move
+    if (players.length === 0) setupPlayers();
 
-    // We communicate with Module 1 (gameboard) to try placing the marker
     const moveSuccessful = gameboard.placeMarker(index, activePlayer.getMarker());
+    if (!moveSuccessful) return;
 
-    if (!moveSuccessful) {
-      console.log("🚨 Invalid move! That square is already taken. Try a different one.");
-      return;
-    }
-
-    // Get the fresh updated board state to check the outcome
     const currentBoard = gameboard.getBoard();
-    console.log("Current board view:", currentBoard);
 
-    // Condition A: Check for victory
+    // Condition A: Victory
     if (checkWin(currentBoard, activePlayer.getMarker())) {
-      console.log(`🏆 CONGRATULATIONS! ${activePlayer.getName()} wins the match!`);
-      // Update the visual status heading on the webpage
       displayController.updateStatus(`🏆 ${activePlayer.getName()} WINS!`); 
       isGameOver = true;
       return;
     }
 
-    // Condition B: Check for tie
+    // Condition B: Tie
     if (checkTie(currentBoard)) {
-      console.log("🤝 IT'S A TIE! The board is completely full.");
-      // Update the visual status heading on the webpage
       displayController.updateStatus("🤝 IT'S A TIE!"); 
       isGameOver = true;
       return;
     }
 
-    // Condition C: Game continues, switch turns
+    // Condition C: Continue Match
     switchPlayerTurn();
-    console.log(`Next up: ${activePlayer.getName()} (${activePlayer.getMarker()})`);
   };
 
   const restartGame = () => {
-    gameboard.resetBoard(); // Clear the board array
-    activePlayer = players[0]; // Reset turn to Player One
+    gameboard.resetBoard();
+    setupPlayers(); // Refresh player names from inputs for the new match
     isGameOver = false;
-    console.log("🔄 The game has been reset! Player One (X) is up.");
   };
 
-  // Expose the public controls to play via developer console
-  return { playRound, getActivePlayer, restartGame, getIsGameOver: () => isGameOver };
+  return { playRound, getActivePlayer, restartGame, getIsGameOver };
 })();
 
 // === MODULE 4: Display Controller (Single instance, IIFE) ===
 const displayController = (() => {
   const boardContainer = document.getElementById("gameboard-container");
   const statusDisplay = document.getElementById("game-status");
+  const restartButton = document.getElementById("restart-btn");
 
-  // This function reads the current board state and renders it on the screen
   const renderBoard = () => {
-    // 1. Clear the HTML inside the container to avoid duplicating cells
     boardContainer.innerHTML = "";
-
-    // 2. Get the current snapshot array from our gameboard module
     const currentBoard = gameboard.getBoard();
 
-    // 3. Loop through the 9 elements of the array to generate the HTML buttons
     currentBoard.forEach((marker, index) => {
       const cellElement = document.createElement("div");
       cellElement.classList.add("cell");
-      
-      // We store the array index directly inside the HTML element using data-attributes
       cellElement.dataset.index = index; 
-      
-      // Set the visual text ("X", "O", or "")
       cellElement.textContent = marker;
-
-      // Append the newly created cell to our grid container
       boardContainer.appendChild(cellElement);
     });
   };
 
-  // Public method to update the status text on the screen
   const updateStatus = (message) => {
     statusDisplay.textContent = message;
   };
-  
-  // Function to handle the user's click on the grid
+
   const handleBoardClick = (event) => {
-    // We target only elements with the class "cell"
     const clickedCell = event.target;
     if (!clickedCell.classList.contains("cell")) return;
-    
-    // If the game is already over in the controller, we don't do anything
+
     if (gameController.getIsGameOver()) return;
 
-    // We pull the index out of the HTML dataset pocket (comes as a string, so we convert to Number)
     const selectedIndex = Number(clickedCell.dataset.index);
-
-    // 2. We send the index to the brain (gameController) to execute the round!
     gameController.playRound(selectedIndex);
-
-    // 3. We refresh the UI to show the new marker on the screen
     renderBoard();
 
-    // 4. Update the visual status text on the screen depending on the state
-    const activePlayer = gameController.getActivePlayer();
+    // If the game didn't end on that move, show the next active player's turn
     if (!gameController.getIsGameOver()) {
+      const activePlayer = gameController.getActivePlayer();
       updateStatus(`${activePlayer.getName()}'s turn (${activePlayer.getMarker()})`);
     }
   };
 
-  // 5. Bind the click event listener to the parent container (Event Delegation)
-  boardContainer.addEventListener("click", handleBoardClick);
+  // New handler function to manage the restart action completely
+  const handleRestart = () => {
+    gameController.restartGame(); // Reset the data architecture in memory
+    renderBoard(); // Redraw the empty board visual elements
+    
+    // Set initial greeting heading with the updated Player One name
+    const activePlayer = gameController.getActivePlayer();
+    updateStatus(`${activePlayer.getName()}'s turn (${activePlayer.getMarker()})`);
+  };
 
-  // For now, we only expose renderBoard so we can see it working
+  // Attach event listeners to their respective DOM components
+  boardContainer.addEventListener("click", handleBoardClick);
+  restartButton.addEventListener("click", handleRestart);
+
   return { renderBoard, updateStatus };
 })();
+
+// Initial execution to draw the base board view on startup
+displayController.renderBoard();
 
 // Initial render call to show the empty board when the page loads
 displayController.renderBoard();
